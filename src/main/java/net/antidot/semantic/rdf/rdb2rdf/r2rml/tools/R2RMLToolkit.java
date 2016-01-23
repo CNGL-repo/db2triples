@@ -37,16 +37,20 @@ import java.util.Map;
 import java.util.Set;
 import java.util.StringTokenizer;
 
+import javax.script.ScriptException;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+
 import net.antidot.semantic.rdf.rdb2rdf.commons.SQLToXMLS;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.R2RMLDataError;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.function.FunctionCall;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.function.JSEnv;
 import net.antidot.semantic.xmls.xsd.XSDLexicalTransformation;
 import net.antidot.semantic.xmls.xsd.XSDType;
 import net.antidot.sql.model.db.ColumnIdentifier;
 import net.antidot.sql.model.db.ColumnIdentifierImpl;
 import net.antidot.sql.model.type.SQLType;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 
 public abstract class R2RMLToolkit {
 
@@ -386,6 +390,22 @@ public abstract class R2RMLToolkit {
 							+ " can not be percent-encoded because "
 							+ e.getMessage());
 		}
+	}
+
+	public static String processFunctionCall(
+			FunctionCall functionCall, 
+			Object[] parameters) throws R2RMLDataError {
+		
+		String result;
+		try {
+			result = JSEnv.invoke(functionCall.getFunctionName(), parameters);
+		} catch (NoSuchMethodException e) {
+			throw new R2RMLDataError(e.getMessage());
+		} catch (ScriptException e) {
+			throw new R2RMLDataError(e.getMessage());
+		}
+		
+		return result;
 	}
 
 }

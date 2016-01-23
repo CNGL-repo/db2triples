@@ -140,7 +140,7 @@ public class R2RMLEngine {
 		// Update inverse expression settings
 		sameRows = new HashMap<TermMap, Map<Integer, ResultSet>>();
 		sameGeneratedRDFTerm = new HashMap<TermMap, Map<Integer, Value>>();
-
+		
 		// Explore R2RML Mapping TriplesMap objects
 		generateRDFTriples(sesameDataSet, r2rmlMapping);
 
@@ -568,7 +568,7 @@ public class R2RMLEngine {
 			SesameDataSet sesameDataSet, TriplesMap triplesMap,
 			Resource subject, Set<URI> subjectGraphs,
 			PredicateObjectMap predicateObjectMap) throws SQLException,
-			R2RMLDataError, UnsupportedEncodingException {
+			R2RMLDataError, UnsupportedEncodingException {		
 		// 1. Let predicates be the set of generated RDF terms that result
 		// from applying each of the predicate-object map's predicate maps to
 		// row
@@ -870,6 +870,7 @@ public class R2RMLEngine {
 			throws SQLException {
 		SQLType result = null;
 		if (objectMap.getTermMapType() != TermMapType.TEMPLATE_VALUED
+				&& objectMap.getTermMapType() != TermMapType.FUNCTION_CALL_VALUED // do not assume type, needs to be declared by mapper.
 				&& objectMap.getTermType() == TermType.LITERAL
 				&& objectMap.getConstantValue() == null) {
 			for (int i = 1; i <= meta.getColumnCount(); i++) {

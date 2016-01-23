@@ -48,9 +48,10 @@ public class StdGraphMap extends AbstractTermMap implements GraphMap {
 		// No Literal term type
 		// ==> No datatype
 		// ==> No specified language tag
+		// ==> No function call (?)
 		// Only termType possible : IRI => by default
 		super(constantValue, null, null, stringTemplate,
-				termType, inverseExpression, columnValue);
+				termType, inverseExpression, columnValue, null);
 		
 	}
 

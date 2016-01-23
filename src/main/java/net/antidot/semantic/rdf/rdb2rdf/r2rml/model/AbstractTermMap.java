@@ -29,23 +29,11 @@ package net.antidot.semantic.rdf.rdb2rdf.r2rml.model;
 import java.io.UnsupportedEncodingException;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import net.antidot.semantic.rdf.model.tools.RDFDataValidator;
-import net.antidot.semantic.rdf.rdb2rdf.commons.SQLToXMLS;
-import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLStructureException;
-import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLSyntaxException;
-import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.R2RMLDataError;
-import net.antidot.semantic.rdf.rdb2rdf.r2rml.tools.R2RMLToolkit;
-import net.antidot.semantic.xmls.xsd.XSDLexicalTransformation;
-import net.antidot.semantic.xmls.xsd.XSDType;
-import net.antidot.sql.model.db.ColumnIdentifier;
-import net.antidot.sql.model.db.ColumnIdentifierImpl;
-import net.antidot.sql.model.tools.SQLDataValidator;
-import net.antidot.sql.model.tools.SQLToolkit;
-import net.antidot.sql.model.type.SQLType;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -53,11 +41,25 @@ import org.openrdf.model.Literal;
 import org.openrdf.model.URI;
 import org.openrdf.model.Value;
 
+import net.antidot.semantic.rdf.model.tools.RDFDataValidator;
+import net.antidot.semantic.rdf.rdb2rdf.commons.SQLToXMLS;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLStructureException;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLSyntaxException;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.R2RMLDataError;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.function.FunctionCall;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.tools.R2RMLToolkit;
+import net.antidot.semantic.xmls.xsd.XSDLexicalTransformation;
+import net.antidot.semantic.xmls.xsd.XSDType;
+import net.antidot.sql.model.db.ColumnIdentifier;
+import net.antidot.sql.model.db.ColumnIdentifierImpl;
+import net.antidot.sql.model.type.SQLType;
+
 public abstract class AbstractTermMap implements TermMap {
 
 	// Log
 	private static Log log = LogFactory.getLog(AbstractTermMap.class);
 
+	private FunctionCall functionCall;
 	private Value constantValue;
 	private XSDType dataType;
 	private TermType termType;
@@ -69,7 +71,8 @@ public abstract class AbstractTermMap implements TermMap {
 
 	protected AbstractTermMap(Value constantValue, URI dataType,
 			String languageTag, String stringTemplate, URI termType,
-			String inverseExpression, ColumnIdentifier columnValue)
+			String inverseExpression, ColumnIdentifier columnValue,
+			FunctionCall functionCall)
 			throws R2RMLDataError, InvalidR2RMLStructureException,
 			InvalidR2RMLSyntaxException {
 
@@ -79,9 +82,14 @@ public abstract class AbstractTermMap implements TermMap {
 		setStringTemplate(stringTemplate);
 		setTermType(termType, dataType);
 		setDataType(dataType);
+		setFunctionCall(functionCall);
 
 		setInversionExpression(inverseExpression);
 		checkGlobalConsistency();
+	}
+
+	private void setFunctionCall(FunctionCall functionCall) {
+		this.functionCall = functionCall;
 	}
 
 	/**
@@ -332,6 +340,12 @@ public abstract class AbstractTermMap implements TermMap {
 		    	    referencedColumns.add(ColumnIdentifierImpl.buildFromR2RMLConfigFile(colName));
 		    	}
 			break;
+			
+		case FUNCTION_CALL_VALUED:
+			for(ObjectMap om : functionCall.getParameters()) {
+				referencedColumns.addAll(om.getReferencedColumns());
+			}
+			break;
 
 		default:
 			break;
@@ -354,6 +368,9 @@ public abstract class AbstractTermMap implements TermMap {
 			return TermMapType.TEMPLATE_VALUED;
 		else if (termType == TermType.BLANK_NODE)
 			return TermMapType.NO_VALUE_FOR_BNODE;
+		else if (functionCall != null)
+			return TermMapType.FUNCTION_CALL_VALUED;
+		
 		return null;
 	}
 
@@ -426,7 +443,15 @@ public abstract class AbstractTermMap implements TermMap {
 			result = R2RMLToolkit.extractColumnValueFromStringTemplate(
 					stringTemplate, dbValues, dbTypes);
 			return result;
-
+			
+		case FUNCTION_CALL_VALUED:
+			List<String> evaluatedparams = new ArrayList<String>();
+			for(ObjectMap om : functionCall.getParameters()) {
+				String evaluatedparam = om.getValue(dbValues, dbTypes);
+				evaluatedparams.add(evaluatedparam);
+			}			
+			result = R2RMLToolkit.processFunctionCall(functionCall, evaluatedparams.toArray(new String[] {}));
+			return result;
 		default:
 			return null;
 		}

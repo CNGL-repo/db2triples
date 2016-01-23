@@ -49,9 +49,10 @@ public class StdPredicateMap extends AbstractTermMap implements TermMap,
 		// No Literal term type
 		// ==> No datatype
 		// ==> No specified language tag
+		// ==> No Function call (?)
 		// No class IRI
 		super(constantValue, null, null, stringTemplate, termType,
-				inverseExpression, columnValue);
+				inverseExpression, columnValue, null);
 		setPredicateObjectMap(predicateObjectMap);
 	}
 

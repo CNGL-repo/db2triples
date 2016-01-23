@@ -54,8 +54,9 @@ public class StdSubjectMap extends AbstractTermMap implements SubjectMap {
 		// No Literal term type
 		// ==> No datatype
 		// ==> No specified language tag
+		// ==> No function call (?)
 		super(constantValue, null, null, stringTemplate, termType,
-				inverseExpression, columnValue);
+				inverseExpression, columnValue, null);
 		setClassIRIs(classIRIs);
 		setGraphMaps(graphMaps);
 		setOwnTriplesMap(ownTriplesMap);

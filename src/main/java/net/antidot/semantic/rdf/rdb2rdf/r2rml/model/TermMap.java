@@ -56,7 +56,10 @@ public interface TermMap {
 		TEMPLATE_VALUED,
 		//  In db2triples and contrary to the R2RML norm, we accepts
 		// auto-assignments of blank nodes.
-		NO_VALUE_FOR_BNODE
+		NO_VALUE_FOR_BNODE,
+		
+		// A function-call term map.
+		FUNCTION_CALL_VALUED
 	}
 
 	public TermMapType getTermMapType();

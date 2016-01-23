@@ -28,17 +28,38 @@
 package net.antidot.semantic.rdf.rdb2rdf.r2rml.core;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import javax.script.ScriptException;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.openrdf.model.BNode;
+import org.openrdf.model.Resource;
+import org.openrdf.model.Statement;
+import org.openrdf.model.URI;
+import org.openrdf.model.Value;
+import org.openrdf.model.ValueFactory;
+import org.openrdf.model.impl.ValueFactoryImpl;
+import org.openrdf.model.vocabulary.RDF;
+import org.openrdf.repository.RepositoryException;
+import org.openrdf.rio.RDFFormat;
+import org.openrdf.rio.RDFParseException;
+import org.openrdf.sail.memory.model.MemResource;
+
 import net.antidot.semantic.rdf.model.impl.sesame.SesameDataSet;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.core.R2RMLVocabulary.R2RMLTerm;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.core.R2RMLVocabulary.RRFTerm;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLStructureException;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.InvalidR2RMLSyntaxException;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.exception.R2RMLDataError;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.function.FunctionCall;
+import net.antidot.semantic.rdf.rdb2rdf.r2rml.function.JSEnv;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.model.GraphMap;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.model.JoinCondition;
 import net.antidot.semantic.rdf.rdb2rdf.r2rml.model.LogicalTable;
@@ -63,19 +84,6 @@ import net.antidot.semantic.rdf.rdb2rdf.r2rml.model.TriplesMap;
 import net.antidot.sql.model.core.DriverType;
 import net.antidot.sql.model.db.ColumnIdentifier;
 import net.antidot.sql.model.db.ColumnIdentifierImpl;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.openrdf.model.BNode;
-import org.openrdf.model.Resource;
-import org.openrdf.model.Statement;
-import org.openrdf.model.URI;
-import org.openrdf.model.Value;
-import org.openrdf.model.ValueFactory;
-import org.openrdf.model.impl.ValueFactoryImpl;
-import org.openrdf.repository.RepositoryException;
-import org.openrdf.rio.RDFFormat;
-import org.openrdf.rio.RDFParseException;
 
 public abstract class R2RMLMappingFactory {
 
@@ -120,6 +128,34 @@ public abstract class R2RMLMappingFactory {
 		replaceShortcuts(r2rmlMappingGraph);
 		// Run few tests to help user in its RDF syntax
 		launchPreChecks(r2rmlMappingGraph);
+		
+		// Load Scripts
+		try {
+			URI p_body = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + RRFTerm.FUNCTION_BODY);
+			URI p_name = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + RRFTerm.FUNCTION_NAME);
+			
+			List<Statement> statements = r2rmlMappingGraph.tuplePattern(null, p_body, null);
+			Set<String> functionnames = new HashSet<String>();
+			for(int i = 0; i < statements.size(); i++) {
+				Statement statement = statements.get(i);
+				
+				List<Statement> statements2 = r2rmlMappingGraph.tuplePattern(statement.getSubject(), p_name, null);
+				if(statements2.size() != 1)
+					throw new R2RMLDataError("Functions must have exactly one name.");
+				String name = statements2.get(0).getObject().stringValue();
+				if(functionnames.contains(name))
+					throw new R2RMLDataError("Function with that name already declared.");
+				
+				// All seems fine, add name to list and proceed
+				functionnames.add(name);
+				
+				String code = statement.getObject().stringValue();
+				JSEnv.loadCode(code);
+			}
+		} catch (ScriptException e) {
+			throw new R2RMLDataError("Something wrong with one of the scripts: " + e.getMessage());
+		}
+		
 		// Construct R2RML Mapping object
 		Map<Resource, TriplesMap> triplesMapResources = extractTripleMapResources(r2rmlMappingGraph);
 
@@ -543,11 +579,101 @@ public abstract class R2RMLMappingFactory {
 		String columnValueStr = extractLiteralFromTermMap(r2rmlMappingGraph,
 				object, R2RMLTerm.COLUMN);
 		ColumnIdentifier columnValue= ColumnIdentifierImpl.buildFromR2RMLConfigFile(columnValueStr);
+		
+		// BEGIN CHANGED BY CHRISTOPHE
+		
+		FunctionCall functionCall = extractFunctionCallFromTermMap(r2rmlMappingGraph, object, RRFTerm.FUNCTION_CALL, graphMaps);
+		
 		StdObjectMap result = new StdObjectMap(null, constantValue, dataType,
 				languageTag, stringTemplate, termType, inverseExpression,
-				columnValue);
+				columnValue, functionCall);
+		
+		// END CHANGED BY CHRISTOPHE
+		
 		log.debug("[R2RMLMappingFactory:extractObjectMap] Extract object map done.");
 		return result;
+	}
+
+	private static FunctionCall extractFunctionCallFromTermMap(
+				SesameDataSet r2rmlMappingGraph, 
+				Resource termType,
+				RRFTerm term, Set<GraphMap> graphMaps) throws InvalidR2RMLStructureException {
+		
+		URI p = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + term);
+		List<Statement> statements = r2rmlMappingGraph.tuplePattern(termType, p, null);
+		
+		if (statements.isEmpty()) {
+			return null;
+		} else if (statements.size() > 1) {
+			throw new InvalidR2RMLStructureException(
+					"[R2RMLMappingFactory:extractFunctionCallFromTermMap] " + termType
+							+ " has too many " + term + " predicate defined.");
+		}
+		
+		MemResource r = (MemResource) statements.get(0).getObject();
+		// iterate over the statement lists. A function call needs a function
+		// name and a Collection of arguments
+		
+		FunctionCall functioncall = new FunctionCall();
+		
+		// Get the name of the function
+		URI predicate = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + RRFTerm.FUNCTION);
+		List<Statement> stmts = r2rmlMappingGraph.tuplePattern(r, predicate, null);
+		if(stmts.size() != 1) {
+			throw new InvalidR2RMLStructureException(
+					"[R2RMLMappingFactory:extractFunctionCallFromTermMap] must have exactly one function.");
+		}
+		
+		URI functionName = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + RRFTerm.FUNCTION_NAME);
+		Resource functionToCall = (Resource) stmts.get(0).getObject();
+		List<Statement> stmts2 = r2rmlMappingGraph.tuplePattern(functionToCall, functionName, null);
+		
+		// Functions were already preprocessed, so we shouldn't check on existence of 
+		// a function name!
+		
+		String name = stmts2.get(0).getObject().stringValue();
+		functioncall.setFunctionName(name);
+		
+		// Get the parameter bindings of the function
+		predicate = r2rmlMappingGraph.URIref(R2RMLVocabulary.RRF_NAMESPACE + RRFTerm.PARAMETER_BINDINGS);
+		stmts = r2rmlMappingGraph.tuplePattern(r, predicate, null);
+		if(stmts.size() > 1) {
+			throw new InvalidR2RMLStructureException(
+					"[R2RMLMappingFactory:extractFunctionCallFromTermMap] has too many parameter bindings.");
+		}
+		
+		List<ObjectMap> list = new ArrayList<ObjectMap>();
+
+		if(stmts.size() == 0) {
+			// functions with no parameter bindings are allowed
+		} else {
+			MemResource object = (MemResource) stmts.get(0).getObject();
+			while(true){
+				stmts = r2rmlMappingGraph.tuplePattern(object, RDF.FIRST, null);
+				if(stmts.size() == 1) {
+					MemResource first = (MemResource) stmts.get(0).getObject();
+					try {
+						ObjectMap objectmap = extractObjectMap(r2rmlMappingGraph, first, graphMaps);
+						list.add(objectmap);
+					} catch (Exception e) {
+						throw new InvalidR2RMLStructureException(
+								"[R2RMLMappingFactory:extractFunctionCallFromTermMap] something wrong with objectmap belonging to function call.");
+					}
+					
+					stmts = r2rmlMappingGraph.tuplePattern(object, RDF.REST, null);
+					object = (MemResource) stmts.get(0).getObject();
+				} else {
+					break;
+				}
+			}
+		}
+		
+		functioncall.setParameters(list);
+		
+		log.debug("[R2RMLMappingFactory:extractFunctionCallFromTermMap] Extracted "
+		+ term + " : " + functioncall.getFunctionName());
+		
+		return functioncall;
 	}
 
 	private static PredicateMap extractPredicateMap(
